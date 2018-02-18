@@ -1,14 +1,14 @@
-{application, rate,
+{application, rate_app,
  [{description, "An OTP application"},
   {vsn, "0.1.0"},
-  {registered, []},
+  {registered, [rate_app]},
   {mod, { rate_app, []}},
   {applications,
    [kernel,
     stdlib
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [rate_sup, rate_app, rate]},
 
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
