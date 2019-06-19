@@ -27,6 +27,7 @@
 %%
 -record(rates, {
     second              = 0,     %counts for the current second
+    last3sec            = 0,     %counts for the last 3 seconds
     minute              = 0,     %counts for the last minute
     last5min            = 0,     %counts for the last 5 minutes
     last15min           = 0,     %counts for the last 15 minutes
@@ -80,18 +81,18 @@ print() ->
 %%====================================================================
 init([]) ->
     Timer = erlang:send_after(1000, self(), reset),
-    {ok, {#rates{}, Timer, [], [], []}}.
-                        %{[minute list], [5 minute list], [15 minute list]}
+    {ok, {#rates{}, Timer, [], [], [], []}}.
+                        %{[3 second list], [minute list], [5 minute list], [15 minute list]}
 
 %%
 %%
 handle_call({add, N}, _From, State) ->
-    {Rate, Timer, L1, L5, L15} = State,
+    {Rate, Timer, L3S, L1, L5, L15} = State,
     NewRate = Rate#rates{second = Rate#rates.second + N},
-    {reply, {ok, NewRate#rates.second}, {NewRate, Timer, L1, L5, L15}};
+    {reply, {ok, NewRate#rates.second}, {NewRate, Timer, L3S, L1, L5, L15}};
 
 handle_call(get, _From, State) ->
-    {Rate, _Timer, _, _, _} = State,
+    {Rate, _Timer, _, _, _, _} = State,
     {reply, Rate, State};
 
 handle_call(_Request, _From, State) ->
@@ -101,18 +102,19 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(reset, State) ->
-    {Rate, OldTimer, L1, L5, L15} = State,
+    {Rate, OldTimer, L3S, L1, L5, L15} = State,
     erlang:cancel_timer(OldTimer),
     CurrentRate = Rate#rates.second,
     Timer = erlang:send_after(1000, self(), reset),
+    {NewL3S, NewS3S} = count(CurrentRate, L3S, Rate#rates.last3sec, 3),
     {NewL1, NewS1} = count(CurrentRate, L1, Rate#rates.minute, 60),
     {NewL5, NewS5} = count(CurrentRate, L5, Rate#rates.last5min, 5*60),
     {NewL15, NewS15} = count(CurrentRate, L15, Rate#rates.last15min, 15*60),
-    NewRate = Rate#rates{second = 0, minute = NewS1,
+    NewRate = Rate#rates{second = 0, last3sec = NewS3S, minute = NewS1,
                        last5min = NewS5, last15min = NewS15,
                        peak = erlang:max(Rate#rates.peak, CurrentRate)},
 
-    {noreply, {NewRate, Timer, NewL1, NewL5, NewL15}};
+    {noreply, {NewRate, Timer, NewL3S, NewL1, NewL5, NewL15}};
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -126,7 +128,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 %% Internal functions
 %%====================================================================
-count(N, BucketList, Sum, UpperLimit) when length(BucketList) > UpperLimit ->
+count(N, BucketList, Sum, UpperLimit) when length(BucketList) >= UpperLimit ->
     {H, T} = lists:split(1, BucketList),
     [Head] = H,
     NewSum = Sum - Head + N,
